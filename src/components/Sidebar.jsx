@@ -6,6 +6,7 @@ import {
   Settings,
   Home,
   FilePlus,
+  Calendar,
 } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 
@@ -15,10 +16,11 @@ const Sidebar = () => {
 
   const menuItems = [
     { name: "Dashboard", icon: <Home size={20} />, path: "/home" },
-    { name: "Event Data", icon: <Database size={20} />, path: "/event-data" },
-    { name: "Input Data", icon: <FilePlus size={20} />, path: "/input-data" },
-    { name: "Comparison", icon: <BarChart3 size={20} />, path: "/comparison" },
-    { name: "Analytics", icon: <LineChart size={20} />, path: "/analytics" },
+    // { name: "Event Data", icon: <Database size={20} />, path: "/event-data" },
+    // { name: "Input Data", icon: <FilePlus size={20} />, path: "/input-data" },
+    // { name: "Comparison", icon: <BarChart3 size={20} />, path: "/comparison" },
+    // { name: "Analytics", icon: <LineChart size={20} />, path: "/analytics" },
+    { name: "Calender", icon: <Calendar size={20} />, path: "/calender" },
     { name: "Settings", icon: <Settings size={20} />, path: "/settings" },
   ];
 
@@ -29,7 +31,7 @@ const Sidebar = () => {
       } bg-slate-900 text-gray-100 h-screen p-4 flex flex-col transition-all duration-300`}
     >
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center-between mb-6">
         <h1 className={`text-xl font-bold ${!isOpen && "hidden"}`}>NetSight</h1>
         <button
           onClick={() => setIsOpen(!isOpen)}

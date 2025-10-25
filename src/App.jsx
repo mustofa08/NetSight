@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Routes, Route } from "react-router-dom";
 import { supabase } from "./client";
+
 import { Login, Signup } from "./pages";
 import Layout from "./layout/Layout";
 import Dashboard from "./pages/Dashboard";
@@ -9,30 +10,59 @@ import Comparison from "./pages/Comparison";
 import Analytics from "./pages/Analytics";
 import Settings from "./pages/Settings";
 import InputData from "./pages/InputData";
+import Calender from "./pages/Calender";
+import EventDetail from "./pages/EventDetail";
 
 const App = () => {
-  const [token, setToken] = useState(false);
+  // ✅ Gunakan localStorage yang aman untuk menyimpan token
+  const [token, setToken] = useState(() => {
+    try {
+      const saved = localStorage.getItem("token");
+      return saved ? JSON.parse(saved) : null;
+    } catch (error) {
+      console.error("Token parse error:", error);
+      localStorage.removeItem("token");
+      return null;
+    }
+  });
+
   const [user, setUser] = useState(null);
 
-  // Simpan token ke sessionStorage
+  // ✅ Simpan token ke localStorage setiap kali berubah
   useEffect(() => {
-    if (token) sessionStorage.setItem("token", JSON.stringify(token));
+    if (token) {
+      localStorage.setItem("token", JSON.stringify(token));
+    } else {
+      localStorage.removeItem("token");
+    }
   }, [token]);
 
-  // Cek session Supabase saat pertama kali load
+  // ✅ Ambil session Supabase saat pertama kali load
   useEffect(() => {
     const getSession = async () => {
       const { data, error } = await supabase.auth.getSession();
-      if (error) console.error("Session Error:", error.message);
-      setUser(data?.session?.user ?? null);
+      if (error) {
+        console.error("Session Error:", error.message);
+      } else if (data?.session) {
+        setToken(data.session.access_token);
+        setUser(data.session.user);
+      }
     };
 
     getSession();
 
-    // Update user saat ada perubahan status login
+    // ✅ Pantau perubahan status login Supabase
     const { data: listener } = supabase.auth.onAuthStateChange(
       (_event, session) => {
-        setUser(session?.user ?? null);
+        if (session) {
+          setToken(session.access_token);
+          setUser(session.user);
+          localStorage.setItem("token", JSON.stringify(session.access_token));
+        } else {
+          setToken(null);
+          setUser(null);
+          localStorage.removeItem("token");
+        }
       }
     );
 
@@ -52,6 +82,8 @@ const App = () => {
           <Route path="/comparison" element={<Comparison user={user} />} />
           <Route path="/analytics" element={<Analytics user={user} />} />
           <Route path="/settings" element={<Settings user={user} />} />
+          <Route path="/calender" element={<Calender user={user} />} />
+          <Route path="/event/:id" element={<EventDetail />} />
         </Route>
       )}
     </Routes>
