@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useLayoutEffect } from "react";
 import { supabase } from "../client";
 import { Link } from "react-router-dom";
 
@@ -28,7 +28,7 @@ const Calender = () => {
   const [data, setData] = useState(initialData);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
-  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear()); // 🔹 tahun aktif
+  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [showForm, setShowForm] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [selected, setSelected] = useState({
@@ -36,6 +36,8 @@ const Calender = () => {
     regional: null,
     event: null,
   });
+  const [scrollY, setScrollY] = useState(0);
+
   const [formData, setFormData] = useState({
     id: null,
     category: "",
@@ -45,6 +47,7 @@ const Calender = () => {
     endDate: "",
   });
 
+  // 🔹 Fungsi warna border
   const getBorderColor = (nama) => {
     switch (nama) {
       case "JATENG DIY":
@@ -58,13 +61,13 @@ const Calender = () => {
     }
   };
 
-  // 🔹 Ambil data dari Supabase berdasarkan tahun
+  // 🔹 Ambil data awal dari Supabase
   const fetchData = async () => {
     setLoading(true);
     const { data: events, error } = await supabase
       .from("calender_events")
       .select("*")
-      .eq("year", selectedYear); // 🔹 hanya ambil event tahun aktif
+      .eq("year", selectedYear);
 
     if (error) {
       console.error("Gagal mengambil data:", error);
@@ -97,7 +100,14 @@ const Calender = () => {
 
   useEffect(() => {
     fetchData();
-  }, [selectedYear]); // 🔹 ambil ulang data jika tahun berubah
+  }, [selectedYear]);
+
+  // 🔹 Setelah data berubah, jaga posisi scroll
+  useLayoutEffect(() => {
+    if (scrollY > 0) {
+      window.scrollTo(0, scrollY);
+    }
+  }, [data]);
 
   // 🔹 Format tanggal
   const formatTanggal = (start, end) => {
@@ -142,26 +152,40 @@ const Calender = () => {
   // 🔹 Hapus event
   const handleRemove = async (eventId) => {
     if (!window.confirm("Yakin ingin hapus event ini?")) return;
+    setScrollY(window.scrollY);
     const { error } = await supabase
       .from("calender_events")
       .delete()
       .eq("id", eventId);
+
     if (error) {
       console.error("Gagal menghapus:", error);
       alert("Gagal menghapus event");
       return;
     }
-    fetchData();
+
+    // Perbarui data lokal tanpa reload
+    setData((prevData) =>
+      prevData.map((m) => ({
+        ...m,
+        regional: m.regional.map((r) => ({
+          ...r,
+          events: r.events.filter((ev) => ev.id !== eventId),
+        })),
+      }))
+    );
   };
 
-  // 🔹 Simpan event ke Supabase
+  // 🔹 Simpan event (Tambah/Edit)
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setScrollY(window.scrollY);
+
     const month = data[selected.month].month;
     const regional = data[selected.month].regional[selected.regional].nama;
 
     const payload = {
-      year: selectedYear, // 🔹 tambahkan tahun
+      year: selectedYear,
       month,
       regional,
       category: formData.category,
@@ -171,14 +195,21 @@ const Calender = () => {
       end_date: formData.endDate || null,
     };
 
-    let error;
+    let error, newEvent;
+
     if (isEditing && formData.id) {
       ({ error } = await supabase
         .from("calender_events")
         .update(payload)
         .eq("id", formData.id));
     } else {
-      ({ error } = await supabase.from("calender_events").insert([payload]));
+      const { data: inserted, error: insertError } = await supabase
+        .from("calender_events")
+        .insert([payload])
+        .select()
+        .single();
+      error = insertError;
+      newEvent = inserted;
     }
 
     if (error) {
@@ -188,7 +219,43 @@ const Calender = () => {
     }
 
     setShowForm(false);
-    fetchData();
+
+    // 🔹 Update data lokal langsung tanpa reload
+    setData((prevData) =>
+      prevData.map((m, mi) =>
+        mi === selected.month
+          ? {
+              ...m,
+              regional: m.regional.map((r, ri) =>
+                ri === selected.regional
+                  ? {
+                      ...r,
+                      events: isEditing
+                        ? r.events.map((ev) =>
+                            ev.id === formData.id
+                              ? {
+                                  ...ev,
+                                  ...payload,
+                                  startDate: payload.start_date,
+                                  endDate: payload.end_date,
+                                }
+                              : ev
+                          )
+                        : [
+                            ...r.events,
+                            {
+                              ...newEvent,
+                              startDate: payload.start_date,
+                              endDate: payload.end_date,
+                            },
+                          ],
+                    }
+                  : r
+              ),
+            }
+          : m
+      )
+    );
   };
 
   // 🔎 Filter pencarian
@@ -221,6 +288,9 @@ const Calender = () => {
 
   if (loading) return <p className="text-center p-8">Memuat data...</p>;
 
+  // =======================================================================
+  // ============================ RENDER ===================================
+  // =======================================================================
   return (
     <div className="p-6 relative">
       <div className="flex justify-between items-center mb-6">
@@ -228,7 +298,6 @@ const Calender = () => {
           📅 EVENT CALENDAR {selectedYear}
         </h1>
 
-        {/* 🔹 Pilih Tahun */}
         <select
           value={selectedYear}
           onChange={(e) => setSelectedYear(Number(e.target.value))}
