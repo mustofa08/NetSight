@@ -3,7 +3,7 @@ import { useParams, Link } from "react-router-dom";
 import { supabase } from "../client";
 
 const EventDetail = () => {
-  const { id } = useParams(); // ambil ID event dari URL
+  const { id } = useParams();
   const [event, setEvent] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -15,11 +15,9 @@ const EventDetail = () => {
         .eq("id", id)
         .single();
 
-      if (error) {
-        console.error("Gagal memuat event:", error);
-      } else {
-        setEvent(data);
-      }
+      if (error) console.error("Gagal memuat event:", error);
+      else setEvent(data);
+
       setLoading(false);
     };
 
@@ -49,7 +47,8 @@ const EventDetail = () => {
     );
 
   return (
-    <div className="p-8">
+    <div className="p-8 bg-gray-50 min-h-screen">
+      {/* Tombol Kembali */}
       <Link
         to="/calender"
         className="text-blue-500 hover:underline flex items-center gap-1 mb-6"
@@ -57,43 +56,107 @@ const EventDetail = () => {
         ← Kembali ke Kalender
       </Link>
 
-      <div className="bg-white rounded-lg shadow-lg p-6 max-w-3xl mx-auto border-t-4 border-blue-600">
-        <h1 className="text-3xl font-bold text-blue-700 mb-4">{event.name}</h1>
+      {/* Header */}
+      <div className="text-center mb-10">
+        <h1 className="text-2xl font-semibold text-gray-700">
+          POST IMPLEMENTATION ANALYSIS
+        </h1>
+        <h2 className="text-4xl font-bold mt-2">
+          LOCAL EVENT |{" "}
+          <span className="text-red-600">{event.name || "Event"}</span>
+        </h2>
+        <h3 className="text-lg mt-2 text-gray-600 font-medium">
+          {event.location || "Lokasi Tidak Diketahui"}
+        </h3>
+      </div>
 
-        <div className="text-gray-600 space-y-2">
-          <p>
-            <strong>Kategori:</strong> {event.category || "-"}
+      {/* Container Utama */}
+      <div className="grid md:grid-cols-2 gap-6">
+        {/* BACKGROUND */}
+        <div className="bg-white p-5 rounded-xl shadow-md border border-gray-200">
+          <div className="bg-gray-300 text-gray-800 font-bold px-3 py-1 rounded-md w-fit mb-3">
+            BACKGROUND
+          </div>
+          <p className="font-semibold text-gray-800">
+            Local Event{" "}
+            <span className="text-red-600">{event.name || "-"}</span>
           </p>
-          <p>
-            <strong>Wilayah:</strong> {event.regional || "-"}
+          <p className="mt-2">
+            Date:{" "}
+            <span className="font-medium">
+              {event.start_date
+                ? new Date(event.start_date).toLocaleDateString("id-ID", {
+                    day: "2-digit",
+                    month: "long",
+                    year: "numeric",
+                  })
+                : "-"}
+              {event.end_date
+                ? ` - ${new Date(event.end_date).toLocaleDateString("id-ID", {
+                    day: "2-digit",
+                    month: "long",
+                    year: "numeric",
+                  })}`
+                : ""}
+            </span>
           </p>
-          <p>
-            <strong>Bulan:</strong> {event.month || "-"}
-          </p>
-          <p>
-            <strong>Lokasi:</strong> {event.location || "-"}
-          </p>
-          <p>
-            <strong>Tanggal Mulai:</strong>{" "}
-            {event.start_date
-              ? new Date(event.start_date).toLocaleDateString("id-ID", {
-                  day: "2-digit",
-                  month: "long",
-                  year: "numeric",
-                })
-              : "-"}
-          </p>
-          <p>
-            <strong>Tanggal Selesai:</strong>{" "}
-            {event.end_date
-              ? new Date(event.end_date).toLocaleDateString("id-ID", {
-                  day: "2-digit",
-                  month: "long",
-                  year: "numeric",
-                })
-              : "-"}
+          <p>Main Venue: {event.location || "-"}</p>
+          <p>Regional: {event.regional || "-"}</p>
+          <p className="mt-2 text-gray-700">
+            Action: <span className="italic">Healthy Check & Optimization</span>
           </p>
         </div>
+
+        {/* SUMMARY PRODUCTIVITY */}
+        <div className="bg-white p-5 rounded-xl shadow-md border border-gray-200">
+          <div className="bg-gray-300 text-gray-800 font-bold px-3 py-1 rounded-md w-fit mb-3">
+            SUMMARY PRODUCTIVITY
+          </div>
+          <ul className="list-disc ml-5 space-y-2">
+            <li>
+              Incremental <strong>Revenue</strong> During Event :{" "}
+              <span className="text-green-600 font-semibold">
+                Rp 5,022 Mio (43.85%)
+              </span>
+            </li>
+            <li>
+              Incremental <strong>Payload</strong> During Event :{" "}
+              <span className="text-green-600 font-semibold">
+                2.59 TB (65.53%)
+              </span>
+            </li>
+            <li>
+              Total Incremental <strong>Max User</strong> :{" "}
+              <span className="text-green-600 font-semibold">
+                6,413 User (130.7%)
+              </span>
+            </li>
+          </ul>
+        </div>
+      </div>
+
+      {/* Grafik Section */}
+      <div className="mt-10 grid md:grid-cols-3 gap-6">
+        {[
+          { title: "PAYLOAD", growth: "+65.53%" },
+          { title: "REVENUE", growth: "+43.8%" },
+          { title: "USER", growth: "+130.7%" },
+        ].map((item, idx) => (
+          <div
+            key={idx}
+            className="bg-white p-4 rounded-xl shadow border border-gray-200"
+          >
+            <div className="flex justify-between items-center mb-2">
+              <span className="bg-blue-900 text-white text-sm px-3 py-1 rounded">
+                {item.title}
+              </span>
+              <span className="text-green-600 font-bold">{item.growth}</span>
+            </div>
+            <div className="bg-gray-100 h-48 flex items-center justify-center text-gray-400 text-sm rounded">
+              Grafik {item.title} Placeholder
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );
