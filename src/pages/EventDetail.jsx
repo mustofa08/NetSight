@@ -70,9 +70,10 @@ const EventDetail = () => {
     fetchEvent();
   }, [id]);
 
-  // 🔹 Load & parsing Excel dari Supabase
+  // 🔹 Load & parsing Excel dari Supabase + Auto isi Site Serving (tanpa duplikasi)
   useEffect(() => {
     if (!excelUrl) return;
+
     const fetchExcel = async () => {
       try {
         const res = await fetch(excelUrl);
@@ -84,6 +85,7 @@ const EventDetail = () => {
         const [headerRow, ...rows] = jsonData;
         if (!headerRow) return;
 
+        // 🔸 Format data Excel
         const formatted = rows
           .filter((r) => r.length > 1)
           .map((row) => {
@@ -94,7 +96,7 @@ const EventDetail = () => {
               obj[key] = value;
             });
 
-            // 🔸 Format tanggal aman
+            // 🔹 Format tanggal
             const firstKey = headerRow[0];
             if (obj[firstKey]) {
               const raw = obj[firstKey];
@@ -120,10 +122,40 @@ const EventDetail = () => {
 
         setHeaders(headerRow);
         setExcelData(formatted);
+
+        // 🟩 AUTO SET SITE SERVING
+        const siteIdKey = headerRow.find(
+          (h) =>
+            h.toLowerCase().includes("site_id") ||
+            h.toLowerCase().includes("site")
+        );
+
+        if (siteIdKey) {
+          // Ambil nama unik
+          const uniqueSites = [
+            ...new Set(
+              formatted
+                .map((row) => row[siteIdKey])
+                .filter((v) => v && v.toString().trim() !== "")
+            ),
+          ];
+
+          const siteString = uniqueSites.join(", ");
+
+          // 🟩 Langsung update tampilan site serving di background
+          setSiteServing(siteString);
+
+          // 🟩 Update juga event agar UI langsung sinkron tanpa reload
+          setEvent((prev) => ({
+            ...prev,
+            site_serving: siteString,
+          }));
+        }
       } catch (err) {
         console.error("Gagal fetch Excel:", err);
       }
     };
+
     fetchExcel();
   }, [excelUrl]);
 
@@ -201,6 +233,7 @@ const EventDetail = () => {
   };
 
   // 🔹 Hapus Excel
+  // 🔹 Hapus Excel
   const handleExcelDelete = async () => {
     if (!excelFilePath) return;
     try {
@@ -209,14 +242,32 @@ const EventDetail = () => {
         .from("calender_events")
         .update({ excel_url: null, excel_file_path: null })
         .eq("id", id);
+
+      // ✅ Reset semua data terkait Excel
       setExcelUrl("");
       setExcelFilePath("");
       setExcelData([]);
       setHeaders([]);
-      alert("File Excel berhasil dihapus!");
+      setSiteServing(""); // 🟩 Kosongkan Site Serving
+      setSummary({
+        revenue: 0,
+        payload: 0,
+        maxUser: 0,
+        growthRevenue: 0,
+        growthPayload: 0,
+        growthUser: 0,
+      }); // 🟩 Reset Summary ke nol
+
+      // ✅ Update event agar UI langsung sinkron
+      setEvent((prev) => ({
+        ...prev,
+        site_serving: "",
+      }));
+
+      alert("✅ File Excel berhasil dihapus dan data direset!");
     } catch (err) {
       console.error(err);
-      alert("Gagal hapus file Excel!");
+      alert("❌ Gagal hapus file Excel!");
     }
   };
 
@@ -310,10 +361,14 @@ const EventDetail = () => {
       {/* Background + Summary Productivity */}
       <div className="grid md:grid-cols-2 gap-6 mb-10">
         {/* BACKGROUND */}
+        {/* BACKGROUND */}
         <div className="bg-white p-6 rounded-xl shadow-md border border-gray-200 relative">
+          {/* 🔹 Header */}
           <div className="bg-gray-300 text-gray-800 font-bold px-4 py-1 rounded-md w-fit mb-4">
             BACKGROUND
           </div>
+
+          {/* 🔹 Tombol Edit */}
           {!editing && (
             <button
               onClick={() => setEditing(true)}
@@ -322,11 +377,14 @@ const EventDetail = () => {
               Edit
             </button>
           )}
+
+          {/* 🔹 Tampilan Normal */}
           {!editing ? (
             <div className="space-y-2 text-gray-800">
               <p className="font-semibold">
                 Local Event <span className="text-red-600">{event.name}</span>
               </p>
+
               <p>
                 <span className="font-semibold">Date: </span>
                 {event.start_date && event.end_date
@@ -335,49 +393,48 @@ const EventDetail = () => {
                       month: "long",
                     })} - ${new Date(event.end_date).toLocaleDateString(
                       "id-ID",
-                      { day: "2-digit", month: "long", year: "numeric" }
+                      {
+                        day: "2-digit",
+                        month: "long",
+                        year: "numeric",
+                      }
                     )}`
                   : "-"}
               </p>
+
               <p className="font-semibold">Main Venue:</p>
               <ul className="list-disc ml-5">
                 <li>{event.location || "-"}</li>
               </ul>
+
+              {/* 🟩 Site Serving Auto Update */}
               <p className="font-semibold mt-2">Site Serving:</p>
               <ul className="list-disc ml-5">
-                {event.site_serving
-                  ? event.site_serving
+                {siteServing
+                  ? siteServing
                       .split(",")
-                      .map((s, i) => <li key={`site-${i}`}>{s}</li>)
+                      .map((s, i) => <li key={`site-${i}`}>{s.trim()}</li>)
                   : "Belum diisi"}
               </ul>
+
               <p className="font-semibold mt-2">Action:</p>
               <ul className="list-disc ml-5">
                 {event.action
                   ? event.action
                       .split(",")
-                      .map((a, i) => <li key={`act-${i}`}>{a}</li>)
+                      .map((a, i) => <li key={`act-${i}`}>{a.trim()}</li>)
                   : "Belum diisi"}
               </ul>
             </div>
           ) : (
+            /* 🔹 Mode Edit — tanpa Site Serving */
             <div className="space-y-3">
-              <div>
-                <label className="block font-semibold mb-1">Site Serving</label>
-                <textarea
-                  className="w-full border rounded-md p-2"
-                  rows="3"
-                  value={siteServing}
-                  onChange={(e) => setSiteServing(e.target.value)}
-                />
-              </div>
-
               <div>
                 <label className="block font-semibold mb-1">Action</label>
                 <textarea
                   className="w-full border rounded-md p-2"
                   rows="3"
-                  value={action}
+                  value={action || ""}
                   onChange={(e) => setAction(e.target.value)}
                 />
               </div>
