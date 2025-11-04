@@ -22,7 +22,7 @@ const EventDetail = () => {
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
   const [siteServing, setSiteServing] = useState("");
-  const [action, setAction] = useState("");
+  const [actions, setActions] = useState([]);
   const [saving, setSaving] = useState(false);
   const [excelData, setExcelData] = useState([]);
   const [headers, setHeaders] = useState([]);
@@ -33,11 +33,6 @@ const EventDetail = () => {
     payload: "bar",
     rev: "bar",
     user: "bar",
-  });
-  const [chartFilter, setChartFilter] = useState({
-    payload: "all",
-    rev: "all",
-    user: "all",
   });
 
   const [summary, setSummary] = useState({
@@ -61,7 +56,9 @@ const EventDetail = () => {
       if (!error && data) {
         setEvent(data);
         setSiteServing(data.site_serving || "");
-        setAction(data.action || "");
+        setActions(
+          data.action ? data.action.split(",").map((a) => a.trim()) : []
+        );
         setExcelUrl(data.excel_url || "");
         setExcelFilePath(data.excel_file_path || "");
       }
@@ -70,7 +67,7 @@ const EventDetail = () => {
     fetchEvent();
   }, [id]);
 
-  // 🔹 Load & parsing Excel dari Supabase + Auto isi Site Serving (tanpa duplikasi)
+  // 🔹 Load & parsing Excel dari Supabase + Auto isi Site Serving
   useEffect(() => {
     if (!excelUrl) return;
 
@@ -79,51 +76,118 @@ const EventDetail = () => {
         const res = await fetch(excelUrl);
         const arrayBuffer = await res.arrayBuffer();
         const workbook = XLSX.read(arrayBuffer, { type: "array" });
-        const sheet = workbook.Sheets[workbook.SheetNames[0]];
-        const jsonData = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+
+        const sheetName = workbook.SheetNames[0];
+        const sheet = workbook.Sheets[sheetName];
+
+        // 🧩 Tentukan ulang range secara manual biar semua data kebaca
+        let maxRow = 0;
+        let maxCol = 0;
+        Object.keys(sheet).forEach((addr) => {
+          if (addr[0] === "!") return; // skip metadata
+          const { r, c } = XLSX.utils.decode_cell(addr);
+          if (r > maxRow) maxRow = r;
+          if (c > maxCol) maxCol = c;
+        });
+        sheet["!ref"] = XLSX.utils.encode_range({
+          s: { r: 0, c: 0 },
+          e: { r: maxRow, c: maxCol },
+        });
+
+        // 🧾 Convert ke JSON (pakai defval agar kosong tidak di-skip)
+        const jsonData = XLSX.utils.sheet_to_json(sheet, {
+          header: 1,
+          blankrows: false,
+          defval: "",
+        });
 
         const [headerRow, ...rows] = jsonData;
-        if (!headerRow) return;
+        if (!headerRow || headerRow.length === 0) return;
 
-        // 🔸 Format data Excel
+        // 🔄 Format baris menjadi objek
         const formatted = rows
-          .filter((r) => r.length > 1)
+          .filter((r) => r.some((cell) => cell !== ""))
           .map((row) => {
             const obj = {};
             headerRow.forEach((key, i) => {
               let value = row[i];
-              if (!isNaN(value) && value !== "") value = Number(value);
+              if (typeof value === "string") {
+                // Normalisasi angka dengan koma/titik campur
+                value = value.replace(/\./g, "").replace(/,/g, ".");
+              }
+              if (!isNaN(parseFloat(value)) && value !== "")
+                value = parseFloat(value);
               obj[key] = value;
             });
 
-            // 🔹 Format tanggal
+            // Konversi tanggal (kolom pertama)
             const firstKey = headerRow[0];
             if (obj[firstKey]) {
               const raw = obj[firstKey];
               let dateVal;
+
               if (typeof raw === "number") {
                 const parsed = XLSX.SSF.parse_date_code(raw);
-                if (parsed) {
+                if (parsed)
                   dateVal = new Date(parsed.y, parsed.m - 1, parsed.d);
+              } else if (typeof raw === "string") {
+                let clean = raw
+                  .trim()
+                  .replace(/\./g, "")
+                  .replace(/[-_/]/g, " ")
+                  .replace(/\s+/g, " ");
+                const parts = clean.split(" ");
+                const monthMap = {
+                  jan: 0,
+                  feb: 1,
+                  mar: 2,
+                  apr: 3,
+                  mei: 4,
+                  may: 4,
+                  jun: 5,
+                  jul: 6,
+                  agu: 7,
+                  ags: 7,
+                  aug: 7,
+                  sep: 8,
+                  okt: 9,
+                  oct: 9,
+                  nov: 10,
+                  des: 11,
+                  dec: 11,
+                };
+                if (parts.length >= 2) {
+                  const day = parseInt(parts[0]);
+                  const monthTxt = parts[1].slice(0, 3).toLowerCase();
+                  const month = monthMap[monthTxt];
+                  if (!isNaN(day) && month !== undefined) {
+                    const eventYear = new Date(
+                      event?.start_date || Date.now()
+                    ).getFullYear();
+                    const year = eventYear;
+
+                    dateVal = new Date(year, month, day);
+                  }
                 }
-              } else {
-                dateVal = new Date(raw);
               }
 
               if (dateVal && !isNaN(dateVal)) {
-                obj[firstKey] = `${dateVal.getDate()} ${dateVal.toLocaleString(
-                  "id-ID",
-                  { month: "short" }
-                )}`;
+                const monthShort = dateVal
+                  .toLocaleString("id-ID", { month: "short" })
+                  .replace(".", ""); // hapus titik dari 'Sep.'
+                obj[firstKey] = `${dateVal.getDate()} ${monthShort}`;
+              } else {
+                console.warn("⚠️ Skip baris karena tanggal tidak valid:", raw);
               }
             }
+
             return obj;
           });
 
         setHeaders(headerRow);
         setExcelData(formatted);
 
-        // 🟩 AUTO SET SITE SERVING
+        // 🟩 Auto isi site_serving
         const siteIdKey = headerRow.find(
           (h) =>
             h.toLowerCase().includes("site_id") ||
@@ -131,7 +195,6 @@ const EventDetail = () => {
         );
 
         if (siteIdKey) {
-          // Ambil nama unik
           const uniqueSites = [
             ...new Set(
               formatted
@@ -142,14 +205,29 @@ const EventDetail = () => {
 
           const siteString = uniqueSites.join(", ");
 
-          // 🟩 Langsung update tampilan site serving di background
+          // ✅ Simpan ke state lokal React
           setSiteServing(siteString);
-
-          // 🟩 Update juga event agar UI langsung sinkron tanpa reload
           setEvent((prev) => ({
             ...prev,
             site_serving: siteString,
           }));
+
+          // 🧭 Simpan otomatis site_serving ke database setelah upload Excel
+          if (event?.id && siteString) {
+            const { error } = await supabase
+              .from("calender_events")
+              .update({ site_serving: siteString })
+              .eq("id", event.id);
+
+            if (error) {
+              console.error("❌ Gagal update site_serving:", error.message);
+            } else {
+              console.log(
+                "✅ site_serving berhasil diupdate ke Supabase:",
+                siteString
+              );
+            }
+          }
         }
       } catch (err) {
         console.error("Gagal fetch Excel:", err);
@@ -159,20 +237,24 @@ const EventDetail = () => {
     fetchExcel();
   }, [excelUrl]);
 
-  // 🔹 Simpan perubahan manual site_serving & action
+  // 🔹 Simpan perubahan Action
   const handleSave = async () => {
     setSaving(true);
     const { error } = await supabase
       .from("calender_events")
       .update({
         site_serving: siteServing,
-        action: action,
+        action: actions.join(", "),
       })
       .eq("id", event.id);
 
     if (error) alert("Gagal menyimpan perubahan!");
     else {
-      setEvent({ ...event, site_serving: siteServing, action: action });
+      setEvent((prev) => ({
+        ...prev,
+        site_serving: siteServing,
+        action: actions.join(", "),
+      }));
       setEditing(false);
     }
     setSaving(false);
@@ -184,16 +266,13 @@ const EventDetail = () => {
     if (!file) return;
 
     try {
-      // Hapus file lama kalau ada
       if (excelFilePath) {
         await supabase.storage.from("event-excels").remove([excelFilePath]);
       }
 
-      // Buat nama unik
       const fileExt = file.name.split(".").pop();
       const newFileName = `event-${id}-${Date.now()}.${fileExt}`;
 
-      // Upload file ke bucket
       const { error: uploadError } = await supabase.storage
         .from("event-excels")
         .upload(newFileName, file, {
@@ -203,7 +282,6 @@ const EventDetail = () => {
 
       if (uploadError) throw uploadError;
 
-      // ✅ Ambil public URL dengan benar
       const { data: publicUrlData, error: urlError } = supabase.storage
         .from("event-excels")
         .getPublicUrl(newFileName);
@@ -211,8 +289,7 @@ const EventDetail = () => {
       if (urlError) throw urlError;
       const publicUrl = publicUrlData.publicUrl;
 
-      // ✅ Simpan ke database
-      const { error: updateError } = await supabase
+      await supabase
         .from("calender_events")
         .update({
           excel_url: publicUrl,
@@ -220,9 +297,6 @@ const EventDetail = () => {
         })
         .eq("id", id);
 
-      if (updateError) throw updateError;
-
-      // ✅ Update state
       setExcelUrl(publicUrl);
       setExcelFilePath(newFileName);
       alert("✅ File berhasil diupload dan tersimpan!");
@@ -233,22 +307,16 @@ const EventDetail = () => {
   };
 
   // 🔹 Hapus Excel
-  // 🔹 Hapus Excel
   const handleExcelDelete = async () => {
     if (!excelFilePath) return;
     try {
-      await supabase.storage.from("event-excels").remove([excelFilePath]);
-      await supabase
-        .from("calender_events")
-        .update({ excel_url: null, excel_file_path: null })
-        .eq("id", id);
-
-      // ✅ Reset semua data terkait Excel
-      setExcelUrl("");
+      // 🧹 Reset dulu sebelum hapus agar state bersih
+      const oldPath = excelFilePath;
       setExcelFilePath("");
+      setExcelUrl("");
       setExcelData([]);
       setHeaders([]);
-      setSiteServing(""); // 🟩 Kosongkan Site Serving
+      setSiteServing("");
       setSummary({
         revenue: 0,
         payload: 0,
@@ -256,13 +324,21 @@ const EventDetail = () => {
         growthRevenue: 0,
         growthPayload: 0,
         growthUser: 0,
-      }); // 🟩 Reset Summary ke nol
+      });
+      setEvent((prev) => ({ ...prev, site_serving: "" }));
 
-      // ✅ Update event agar UI langsung sinkron
-      setEvent((prev) => ({
-        ...prev,
-        site_serving: "",
-      }));
+      // 🔹 Hapus file dari storage
+      await supabase.storage.from("event-excels").remove([oldPath]);
+
+      // 🔹 Hapus referensi di database
+      await supabase
+        .from("calender_events")
+        .update({
+          excel_url: null,
+          excel_file_path: null,
+          site_serving: "",
+        })
+        .eq("id", id);
 
       alert("✅ File Excel berhasil dihapus dan data direset!");
     } catch (err) {
@@ -295,19 +371,21 @@ const EventDetail = () => {
     );
 
     const growthRevenue =
-      excelData.length > 1
+      excelData.length > 1 && excelData[0][revKey] !== 0
         ? ((excelData.at(-1)[revKey] - excelData[0][revKey]) /
             excelData[0][revKey]) *
           100
         : 0;
+
     const growthPayload =
-      excelData.length > 1
+      excelData.length > 1 && excelData[0][payloadKey] !== 0
         ? ((excelData.at(-1)[payloadKey] - excelData[0][payloadKey]) /
             excelData[0][payloadKey]) *
           100
         : 0;
+
     const growthUser =
-      excelData.length > 1
+      excelData.length > 1 && excelData[0][userKey] !== 0
         ? ((excelData.at(-1)[userKey] - excelData[0][userKey]) /
             excelData[0][userKey]) *
           100
@@ -323,16 +401,285 @@ const EventDetail = () => {
     });
   }, [excelData, headers]);
 
-  // 🔹 Chart data setup
-  const chartSections = [
-    { title: "PAYLOAD", key: "payload", growth: "+65.53%" },
-    { title: "REVENUE", key: "rev", growth: "+43.85%" },
-    { title: "USER", key: "user", growth: "+130.7%" },
-  ];
+  const [highlightZones, setHighlightZones] = useState([]);
+  const [parsedData, setParsedData] = useState([]);
 
-  const highlightZones = [
-    { x1: "7 Agu", x2: "14 Agu" },
-    { x1: "13 Sep", x2: "15 Sep" },
+  useEffect(() => {
+    if (
+      !event ||
+      !event.start_date ||
+      !event.end_date ||
+      excelData.length === 0
+    )
+      return;
+
+    const start = new Date(event.start_date);
+    const end = new Date(event.end_date);
+
+    // 🔹 Deteksi metrik yang sedang aktif (chartType tidak pengaruh, semua baca sama)
+    const metricMap = {
+      payload: headers.find((h) => h.toLowerCase().includes("payload")),
+      rev: headers.find((h) => h.toLowerCase().includes("rev")),
+      user: headers.find(
+        (h) =>
+          h.toLowerCase().includes("user") || h.toLowerCase().includes("usr")
+      ),
+    };
+
+    // fallback kalau belum ketemu
+    const metricKey = metricMap.rev || metricMap.payload || metricMap.user;
+    if (!metricKey) {
+      console.warn("⚠️ Tidak menemukan kolom metrik di Excel");
+      return;
+    }
+
+    // 🔸 Parse data dari Excel
+    // 🔹 Buat parsed data per metrik
+    const makeParsedData = (metricKey) => {
+      return excelData
+        .map((row) => {
+          let raw = row[headers[0]];
+          let date;
+
+          // Konversi tanggal
+          if (raw instanceof Date && !isNaN(raw)) {
+            date = raw;
+          } else if (typeof raw === "number") {
+            const parsed = XLSX.SSF.parse_date_code(raw);
+            if (parsed) date = new Date(parsed.y, parsed.m - 1, parsed.d);
+          } else if (typeof raw === "string") {
+            const clean = raw.trim().replace(/[-_/]/g, " ");
+            const parts = clean.split(" ");
+            if (parts.length >= 2) {
+              const day = parseInt(parts[0]);
+              const monthTxt = parts[1].slice(0, 3).toLowerCase();
+              const monthMap = {
+                jan: 0,
+                feb: 1,
+                mar: 2,
+                apr: 3,
+                mei: 4,
+                may: 4,
+                jun: 5,
+                jul: 6,
+                agu: 7,
+                ags: 7,
+                aug: 7,
+                sep: 8,
+                okt: 9,
+                oct: 9,
+                nov: 10,
+                des: 11,
+                dec: 11,
+              };
+              const month = monthMap[monthTxt];
+              if (!isNaN(day) && month !== undefined)
+                date = new Date(2025, month, day);
+            }
+          }
+
+          if (!date || isNaN(date)) return null;
+
+          const monthShort = date
+            .toLocaleString("id-ID", { month: "short" })
+            .replace(".", "");
+          const label = `${date.getDate()} ${monthShort}`;
+          const value = parseFloat(row[metricKey]) || 0;
+
+          return { date, label, value };
+        })
+        .filter(Boolean)
+        .sort((a, b) => a.date - b.date);
+    };
+
+    // 🔸 Generate untuk tiap metrik
+    const revKey = headers.find((h) => h.toLowerCase().includes("rev"));
+    const payloadKey = headers.find((h) => h.toLowerCase().includes("payload"));
+    const userKey = headers.find(
+      (h) => h.toLowerCase().includes("user") || h.toLowerCase().includes("usr")
+    );
+    const parsed = makeParsedData(metricKey);
+    setParsedData({
+      rev: makeParsedData(revKey),
+      payload: makeParsedData(payloadKey),
+      user: makeParsedData(userKey),
+    });
+
+    // 🔸 Cari label terdekat untuk ReferenceArea
+    const findClosestLabel = (target) => {
+      const closest = parsed.reduce((prev, curr) =>
+        Math.abs(curr.date - target) < Math.abs(prev.date - target)
+          ? curr
+          : prev
+      );
+      return closest.label;
+    };
+
+    // 🟩 Event Zone
+    const eventZone = {
+      x1: findClosestLabel(start),
+      x2: findClosestLabel(end),
+      type: "event",
+    };
+
+    // 🟦 Lowest Same-Day Zone
+    let lowestSameDayZone = null;
+
+    // Ambil semua tanggal yang hari-nya sama dengan hari event
+    const eventDays = [];
+    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+      eventDays.push(d.getDay());
+    }
+
+    if (parsed.length > 0) {
+      const eventDuration =
+        Math.round((end - start) / (24 * 60 * 60 * 1000)) + 1; // jumlah hari event
+
+      // Ambil semua data sebelum event
+      const pastData = parsed.filter((d) => d.date < start);
+
+      if (pastData.length >= eventDuration) {
+        let lowestAvg = Infinity;
+        let bestStartIndex = null;
+
+        // Sliding window sepanjang durasi event
+        for (let i = 0; i <= pastData.length - eventDuration; i++) {
+          const window = pastData.slice(i, i + eventDuration);
+
+          // Cek apakah semua hari window cocok dengan hari-hari event
+          const windowDays = window.map((d) => d.date.getDay());
+          const allMatch = windowDays.every((d) => eventDays.includes(d));
+          if (!allMatch) continue;
+
+          // Hitung rata-rata window ini
+          const avg = window.reduce((s, d) => s + d.value, 0) / window.length;
+
+          if (avg < lowestAvg) {
+            lowestAvg = avg;
+            bestStartIndex = i;
+          }
+        }
+
+        // Ambil periode dengan rata-rata paling kecil
+        if (bestStartIndex !== null) {
+          const bestWindow = pastData.slice(
+            bestStartIndex,
+            bestStartIndex + eventDuration
+          );
+
+          lowestSameDayZone = {
+            x1: bestWindow[0].label,
+            x2: bestWindow[bestWindow.length - 1].label,
+            type: "lowestSameDay",
+          };
+
+          console.log(
+            "🟦 Lowest Same-Day Zone FOUND:",
+            lowestSameDayZone,
+            "Rata-rata:",
+            lowestAvg.toFixed(2)
+          );
+        } else {
+          console.warn("⚠️ Tidak ada window cocok dengan hari event.");
+        }
+      }
+    }
+
+    const zones = [];
+    if (eventZone) zones.push(eventZone);
+    if (lowestSameDayZone) zones.push(lowestSameDayZone);
+
+    setHighlightZones(zones);
+  }, [event, excelData, headers]);
+
+  useEffect(() => {
+    if (!highlightZones.length || !parsedData.rev) return;
+
+    // Fungsi bantu ambil total nilai dari label range
+    const getTotalInZone = (data, zone) => {
+      if (!data.length || !zone) return 0;
+      const startIndex = data.findIndex((d) => d.label === zone.x1);
+      const endIndex = data.findIndex((d) => d.label === zone.x2);
+      if (startIndex === -1 || endIndex === -1) return 0;
+
+      const slice = data.slice(
+        Math.min(startIndex, endIndex),
+        Math.max(startIndex, endIndex) + 1
+      );
+      return slice.reduce((sum, d) => sum + (d.value || 0), 0);
+    };
+
+    // Ambil data per metrik
+    const revData = parsedData.rev || [];
+    const payloadData = parsedData.payload || [];
+    const userData = parsedData.user || [];
+
+    // Ambil masing-masing zona
+    const eventZone = highlightZones.find((z) => z.type === "event");
+    const lowestZone = highlightZones.find((z) => z.type === "lowestSameDay");
+
+    if (!eventZone || !lowestZone) return;
+
+    // Hitung total untuk setiap metrik
+    const totalRevEvent = getTotalInZone(revData, eventZone);
+    const totalRevLowest = getTotalInZone(revData, lowestZone);
+
+    const totalPayloadEvent = getTotalInZone(payloadData, eventZone);
+    const totalPayloadLowest = getTotalInZone(payloadData, lowestZone);
+
+    const totalUserEvent = getTotalInZone(userData, eventZone);
+    const totalUserLowest = getTotalInZone(userData, lowestZone);
+
+    // Hindari pembagian 0
+    const safeDiv = (num, den) => (den === 0 ? 0 : (num / den) * 100);
+
+    // Simpan hasil ke summary
+    setSummary({
+      revenue: totalRevEvent - totalRevLowest,
+      payload: totalPayloadEvent - totalPayloadLowest,
+      maxUser: totalUserEvent - totalUserLowest,
+      growthRevenue: Math.min(
+        safeDiv(totalRevEvent - totalRevLowest, totalRevLowest),
+        999.99
+      ),
+      growthPayload: Math.min(
+        safeDiv(totalPayloadEvent - totalPayloadLowest, totalPayloadLowest),
+        999.99
+      ),
+      growthUser: Math.min(
+        safeDiv(totalUserEvent - totalUserLowest, totalUserLowest),
+        999.99
+      ),
+    });
+
+    console.log("🧮 SUMMARY PRODUCTIVITY CALCULATED:");
+    console.table({
+      totalRevEvent,
+      totalRevLowest,
+      totalPayloadEvent,
+      totalPayloadLowest,
+      totalUserEvent,
+      totalUserLowest,
+    });
+  }, [highlightZones, parsedData]);
+
+  // 🔹 Chart data
+  const chartSections = [
+    {
+      title: "PAYLOAD",
+      key: "payload",
+      growth: `${summary.growthPayload.toFixed(2)}%`,
+    },
+    {
+      title: "REVENUE",
+      key: "rev",
+      growth: `${summary.growthRevenue.toFixed(2)}%`,
+    },
+    {
+      title: "USER",
+      key: "user",
+      growth: `${summary.growthUser.toFixed(2)}%`,
+    },
   ];
 
   if (loading)
@@ -358,17 +705,14 @@ const EventDetail = () => {
         </h2>
       </div>
 
-      {/* Background + Summary Productivity */}
+      {/* Background + Summary */}
       <div className="grid md:grid-cols-2 gap-6 mb-10">
         {/* BACKGROUND */}
-        {/* BACKGROUND */}
         <div className="bg-white p-6 rounded-xl shadow-md border border-gray-200 relative">
-          {/* 🔹 Header */}
           <div className="bg-gray-300 text-gray-800 font-bold px-4 py-1 rounded-md w-fit mb-4">
             BACKGROUND
           </div>
 
-          {/* 🔹 Tombol Edit */}
           {!editing && (
             <button
               onClick={() => setEditing(true)}
@@ -378,36 +722,30 @@ const EventDetail = () => {
             </button>
           )}
 
-          {/* 🔹 Tampilan Normal */}
           {!editing ? (
             <div className="space-y-2 text-gray-800">
               <p className="font-semibold">
-                Local Event <span className="text-red-600">{event.name}</span>
+                Local Event{" "}
+                <span className="text-red-600">{event?.name || "-"}</span>
               </p>
-
               <p>
                 <span className="font-semibold">Date: </span>
-                {event.start_date && event.end_date
+                {event?.start_date && event?.end_date
                   ? `${new Date(event.start_date).toLocaleDateString("id-ID", {
                       day: "2-digit",
                       month: "long",
                     })} - ${new Date(event.end_date).toLocaleDateString(
                       "id-ID",
-                      {
-                        day: "2-digit",
-                        month: "long",
-                        year: "numeric",
-                      }
+                      { day: "2-digit", month: "long", year: "numeric" }
                     )}`
                   : "-"}
               </p>
 
               <p className="font-semibold">Main Venue:</p>
               <ul className="list-disc ml-5">
-                <li>{event.location || "-"}</li>
+                <li>{event?.location || "-"}</li>
               </ul>
 
-              {/* 🟩 Site Serving Auto Update */}
               <p className="font-semibold mt-2">Site Serving:</p>
               <ul className="list-disc ml-5">
                 {siteServing
@@ -419,7 +757,7 @@ const EventDetail = () => {
 
               <p className="font-semibold mt-2">Action:</p>
               <ul className="list-disc ml-5">
-                {event.action
+                {event?.action
                   ? event.action
                       .split(",")
                       .map((a, i) => <li key={`act-${i}`}>{a.trim()}</li>)
@@ -427,16 +765,52 @@ const EventDetail = () => {
               </ul>
             </div>
           ) : (
-            /* 🔹 Mode Edit — tanpa Site Serving */
-            <div className="space-y-3">
-              <div>
-                <label className="block font-semibold mb-1">Action</label>
-                <textarea
-                  className="w-full border rounded-md p-2"
-                  rows="3"
-                  value={action || ""}
-                  onChange={(e) => setAction(e.target.value)}
-                />
+            <div>
+              <label className="block font-semibold mb-1">Action</label>
+              <div className="space-y-2">
+                {actions.map((act, idx) => (
+                  <div key={idx} className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={act}
+                      onChange={(e) => {
+                        const updated = [...actions];
+                        updated[idx] = e.target.value;
+                        setActions(updated);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          const updated = [...actions];
+                          updated.splice(idx + 1, 0, "");
+                          setActions(updated);
+                        }
+                      }}
+                      className="w-full border rounded-md p-2"
+                      placeholder={`Action ${idx + 1}`}
+                    />
+
+                    {/* Tombol hapus action */}
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setActions(actions.filter((_, i) => i !== idx))
+                      }
+                      className="bg-red-500 hover:bg-red-600 text-white px-2 py-1 rounded-md text-sm"
+                      title="Hapus Action"
+                    >
+                      🗑️
+                    </button>
+                  </div>
+                ))}
+
+                <button
+                  type="button"
+                  onClick={() => setActions([...actions, ""])}
+                  className="text-blue-600 text-sm font-medium hover:underline"
+                >
+                  + Tambah Action
+                </button>
               </div>
 
               <div className="flex gap-3 mt-3">
@@ -468,31 +842,38 @@ const EventDetail = () => {
               Incremental Revenue During Event :
               <span className="text-green-600">
                 {" "}
-                Rp {summary.revenue.toLocaleString()} Mio (
-                {summary.growthRevenue.toFixed(2)}%)
+                Rp{" "}
+                {summary.revenue.toLocaleString("id-ID", {
+                  maximumFractionDigits: 2,
+                })}{" "}
+                a({summary.growthRevenue.toFixed(2)}%)
               </span>
             </li>
             <li>
               Incremental Payload During Event :
               <span className="text-green-600">
                 {" "}
-                {summary.payload.toLocaleString()} TB (
-                {summary.growthPayload.toFixed(2)}%)
+                {summary.payload.toLocaleString("id-ID", {
+                  maximumFractionDigits: 2,
+                })}{" "}
+                a({summary.growthPayload.toFixed(2)}%)
               </span>
             </li>
             <li>
               Incremental Max User During Event :
               <span className="text-green-600">
                 {" "}
-                {summary.maxUser.toLocaleString()} User (
-                {summary.growthUser.toFixed(2)}%)
+                {summary.maxUser.toLocaleString("id-ID", {
+                  maximumFractionDigits: 2,
+                })}{" "}
+                a({summary.growthUser.toFixed(2)}%)
               </span>
             </li>
           </ul>
         </div>
       </div>
 
-      {/* Upload & Chart */}
+      {/* Upload Excel & Chart Section */}
       <div className="bg-white p-6 rounded-xl shadow-md border border-gray-200">
         <div className="flex justify-between items-center mb-6">
           <h2 className="text-lg font-bold">Upload Excel & Chart</h2>
@@ -517,20 +898,28 @@ const EventDetail = () => {
         {excelData.length > 0 ? (
           <div className="grid md:grid-cols-3 gap-8">
             {chartSections.map((chart) => {
-              const dataKeys = headers.filter((key) => {
-                const lower = key.toLowerCase();
-                if (key.length > 15) return false; // abaikan nama kolom panjang
-                if (chart.key === "payload") return lower.includes("payload");
-                if (chart.key === "rev") return lower.includes("rev");
-                if (chart.key === "user")
-                  return lower.includes("user") || lower.includes("usr");
-                return false;
-              });
+              // Tentukan key Excel yang sesuai
+              const metricKey =
+                chart.key === "rev"
+                  ? headers.find((h) => /^rev$/i.test(h.trim()))
+                  : chart.key === "payload"
+                  ? headers.find((h) => h.toLowerCase().includes("payload"))
+                  : headers.find(
+                      (h) =>
+                        h.toLowerCase().includes("user") ||
+                        h.toLowerCase().includes("usr")
+                    );
 
-              const filteredKeys =
-                chartFilter[chart.key] === "all"
-                  ? dataKeys
-                  : [chartFilter[chart.key]];
+              if (!metricKey) return null;
+
+              // 🔹 Generate data spesifik untuk tiap chart
+              const chartData = parsedData[chart.key] || [];
+
+              const colorMap = {
+                payload: "#2563eb", // biru
+                rev: "#16a34a", // hijau
+                user: "#9333ea", // ungu
+              };
 
               return (
                 <div key={chart.key}>
@@ -538,30 +927,18 @@ const EventDetail = () => {
                     <div className="bg-blue-700 text-white px-4 py-1 rounded-md font-bold">
                       {chart.title}
                     </div>
-                    <div className="bg-green-500 text-white px-3 py-1 rounded-lg text-sm font-semibold shadow">
+                    <div
+                      className={`${
+                        parseFloat(chart.growth) >= 0
+                          ? "bg-green-500"
+                          : "bg-red-500"
+                      } text-white px-3 py-1 rounded-lg text-sm font-semibold shadow`}
+                    >
                       {chart.growth}
                     </div>
                   </div>
 
                   <div className="flex justify-between items-center mb-2 text-sm">
-                    <select
-                      className="border rounded px-2 py-1"
-                      value={chartFilter[chart.key]}
-                      onChange={(e) =>
-                        setChartFilter({
-                          ...chartFilter,
-                          [chart.key]: e.target.value,
-                        })
-                      }
-                    >
-                      <option value="all">Semua</option>
-                      {dataKeys.map((key) => (
-                        <option key={`${chart.key}-${key}`} value={key}>
-                          {key}
-                        </option>
-                      ))}
-                    </select>
-
                     <button
                       className="border px-2 py-1 rounded bg-gray-100 hover:bg-gray-200"
                       onClick={() =>
@@ -579,47 +956,74 @@ const EventDetail = () => {
                   <div className="bg-gray-50 rounded-lg shadow p-3 border border-gray-200">
                     <ResponsiveContainer width="100%" height={280}>
                       {chartType[chart.key] === "bar" ? (
-                        <BarChart data={excelData}>
+                        <BarChart data={chartData}>
                           <CartesianGrid strokeDasharray="3 3" />
-                          <XAxis dataKey={headers[0]} tick={{ fontSize: 10 }} />
+                          <XAxis dataKey="label" tick={{ fontSize: 10 }} />
                           <YAxis domain={[0, "auto"]} tick={{ fontSize: 10 }} />
                           <Tooltip />
                           <Legend />
-                          {highlightZones.map((z, i) => (
-                            <ReferenceArea
-                              key={`${chart.key}-zone-${i}`}
-                              x1={z.x1}
-                              x2={z.x2}
-                              fill="#d1fae5"
-                              strokeOpacity={0.3}
-                            />
-                          ))}
-                          {filteredKeys.map((key, i) => (
-                            <Bar
-                              key={`${chart.key}-${key}-${i}`}
-                              dataKey={key}
-                              fill={`hsl(${i * 80},70%,50%)`}
-                              radius={[4, 4, 0, 0]}
-                            />
-                          ))}
+                          {highlightZones
+                            .filter((z) => z && z.x1 && z.x2)
+                            .map((z, i) => (
+                              <ReferenceArea
+                                key={`${chart.key}-zone-${i}`}
+                                x1={z.x1}
+                                x2={z.x2}
+                                fill={
+                                  z.type === "lowestSameDay"
+                                    ? "#bfdbfe" // biru muda
+                                    : "#a7f3d0" // hijau muda
+                                }
+                                stroke={
+                                  z.type === "lowestSameDay"
+                                    ? "#3b82f6" // biru
+                                    : "#059669" // hijau
+                                }
+                                strokeOpacity={0.7}
+                                fillOpacity={0.4}
+                              />
+                            ))}
+                          <Bar
+                            dataKey="value"
+                            fill={colorMap[chart.key]}
+                            radius={[4, 4, 0, 0]}
+                          />
                         </BarChart>
                       ) : (
-                        <LineChart data={excelData}>
+                        <LineChart data={chartData}>
                           <CartesianGrid strokeDasharray="3 3" />
-                          <XAxis dataKey={headers[0]} tick={{ fontSize: 10 }} />
+                          <XAxis dataKey="label" tick={{ fontSize: 10 }} />
                           <YAxis domain={[0, "auto"]} tick={{ fontSize: 10 }} />
                           <Tooltip />
                           <Legend />
-                          {filteredKeys.map((key, i) => (
-                            <Line
-                              key={`${chart.key}-${key}-${i}`}
-                              type="monotone"
-                              dataKey={key}
-                              stroke={`hsl(${i * 80},70%,50%)`}
-                              strokeWidth={2}
-                              dot={false}
-                            />
-                          ))}
+                          {highlightZones
+                            .filter((z) => z && z.x1 && z.x2)
+                            .map((z, i) => (
+                              <ReferenceArea
+                                key={`${chart.key}-zone-${i}`}
+                                x1={z.x1}
+                                x2={z.x2}
+                                fill={
+                                  z.type === "lowestSameDay"
+                                    ? "#bfdbfe" // biru muda
+                                    : "#a7f3d0" // hijau muda
+                                }
+                                stroke={
+                                  z.type === "lowestSameDay"
+                                    ? "#3b82f6" // biru
+                                    : "#059669" // hijau
+                                }
+                                strokeOpacity={0.7}
+                                fillOpacity={0.4}
+                              />
+                            ))}
+                          <Line
+                            type="monotone"
+                            dataKey="value"
+                            stroke={colorMap[chart.key]}
+                            strokeWidth={2}
+                            dot={false}
+                          />
                         </LineChart>
                       )}
                     </ResponsiveContainer>
