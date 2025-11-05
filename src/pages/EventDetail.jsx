@@ -438,21 +438,28 @@ const EventDetail = () => {
     const makeParsedData = (metricKey) => {
       return excelData
         .map((row) => {
-          let raw = row[headers[0]];
-          let date;
+          const raw = row[headers[0]];
+          let dateVal = null;
 
-          // Konversi tanggal
-          if (raw instanceof Date && !isNaN(raw)) {
-            date = raw;
+          if (raw instanceof Date) {
+            dateVal = raw;
           } else if (typeof raw === "number") {
             const parsed = XLSX.SSF.parse_date_code(raw);
-            if (parsed) date = new Date(parsed.y, parsed.m - 1, parsed.d);
+            if (parsed) dateVal = new Date(parsed.y, parsed.m - 1, parsed.d);
           } else if (typeof raw === "string") {
-            const clean = raw.trim().replace(/[-_/]/g, " ");
-            const parts = clean.split(" ");
-            if (parts.length >= 2) {
-              const day = parseInt(parts[0]);
-              const monthTxt = parts[1].slice(0, 3).toLowerCase();
+            // Tangani format 17/09/2025 atau 2025-09-17
+            const parts = raw.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
+            if (parts) {
+              const [_, d, m, y] = parts;
+              const year = y.length === 2 ? 2000 + parseInt(y) : parseInt(y);
+              dateVal = new Date(year, parseInt(m) - 1, parseInt(d));
+            } else {
+              // fallback ke format "17 Sep"
+              const clean = raw
+                .trim()
+                .replace(/\./g, "")
+                .replace(/[-_/]/g, " ");
+              const seg = clean.split(" ");
               const monthMap = {
                 jan: 0,
                 feb: 1,
@@ -472,21 +479,34 @@ const EventDetail = () => {
                 des: 11,
                 dec: 11,
               };
-              const month = monthMap[monthTxt];
-              if (!isNaN(day) && month !== undefined)
-                date = new Date(2025, month, day);
+              if (seg.length >= 2) {
+                const day = parseInt(seg[0]);
+                const month = monthMap[seg[1].slice(0, 3).toLowerCase()];
+                const year = new Date(
+                  event?.start_date || Date.now()
+                ).getFullYear();
+                if (!isNaN(day) && month !== undefined)
+                  dateVal = new Date(year, month, day);
+              }
             }
           }
 
-          if (!date || isNaN(date)) return null;
+          if (!dateVal || isNaN(dateVal)) return null;
 
-          const monthShort = date
+          const monthShort = dateVal
             .toLocaleString("id-ID", { month: "short" })
             .replace(".", "");
-          const label = `${date.getDate()} ${monthShort}`;
+
+          const siteKey = headers.find((h) => h.toLowerCase().includes("site"));
+          const siteName = row[siteKey] ? String(row[siteKey]).trim() : "";
+
+          const label = siteName
+            ? `${dateVal.getDate()} ${monthShort} - ${siteName}`
+            : `${dateVal.getDate()} ${monthShort}`;
+
           const value = parseFloat(row[metricKey]) || 0;
 
-          return { date, label, value };
+          return { date: dateVal, label, value, site: siteName };
         })
         .filter(Boolean)
         .sort((a, b) => a.date - b.date);
@@ -505,82 +525,103 @@ const EventDetail = () => {
       user: makeParsedData(userKey),
     });
 
-    // 🔸 Cari label terdekat untuk ReferenceArea
-    const findClosestLabel = (target) => {
-      const closest = parsed.reduce((prev, curr) =>
-        Math.abs(curr.date - target) < Math.abs(prev.date - target)
-          ? curr
-          : prev
-      );
-      return closest.label;
+    // 🔸 Cari semua label yang cocok dengan tanggal (bukan hanya satu)
+    const findAllLabelsByDate = (targetDate) => {
+      const targetDay = targetDate.getDate();
+      const targetMonth = targetDate.getMonth();
+      return parsed
+        .filter(
+          (d) =>
+            d.date.getDate() === targetDay && d.date.getMonth() === targetMonth
+        )
+        .map((d) => d.label);
     };
 
-    // 🟩 Event Zone
+    // 🟩 Event Zone (bisa multi label kalau di hari sama ada beberapa site)
+    const eventLabels = [];
+    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+      eventLabels.push(...findAllLabelsByDate(new Date(d)));
+    }
+
+    // Ambil label paling awal dan paling akhir dari semua hari event
     const eventZone = {
-      x1: findClosestLabel(start),
-      x2: findClosestLabel(end),
+      x1: eventLabels[0],
+      x2: eventLabels[eventLabels.length - 1],
       type: "event",
     };
 
     // 🟦 Lowest Same-Day Zone
+    // 🟦 Cari Lowest Same-Day Zone (multi-site fix)
     let lowestSameDayZone = null;
+    let bestStartIndex = null;
 
-    // Ambil semua tanggal yang hari-nya sama dengan hari event
+    // Durasi event (dalam hari)
+    const eventDuration = Math.round((end - start) / (1000 * 60 * 60 * 24)) + 1;
+
+    // Hari-hari event dalam seminggu
     const eventDays = [];
     for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
       eventDays.push(d.getDay());
     }
 
-    if (parsed.length > 0) {
-      const eventDuration =
-        Math.round((end - start) / (24 * 60 * 60 * 1000)) + 1; // jumlah hari event
+    // Site unik di data
+    const uniqueSites = [...new Set(parsed.map((x) => x.site))];
+    const sitesPerDay = uniqueSites.length;
 
-      // Ambil semua data sebelum event
+    if (parsed.length > 0) {
       const pastData = parsed.filter((d) => d.date < start);
 
-      if (pastData.length >= eventDuration) {
+      if (pastData.length >= eventDuration * sitesPerDay) {
         let lowestAvg = Infinity;
-        let bestStartIndex = null;
 
-        // Sliding window sepanjang durasi event
-        for (let i = 0; i <= pastData.length - eventDuration; i++) {
-          const window = pastData.slice(i, i + eventDuration);
+        // iterasi window
+        for (
+          let i = 0;
+          i <= pastData.length - eventDuration * sitesPerDay;
+          i += sitesPerDay
+        ) {
+          const window = pastData.slice(i, i + eventDuration * sitesPerDay);
+          const windowDays = [...new Set(window.map((d) => d.date.getDay()))];
 
-          // Cek apakah semua hari window cocok dengan hari-hari event
-          const windowDays = window.map((d) => d.date.getDay());
-          const allMatch = windowDays.every((d) => eventDays.includes(d));
+          // Pastikan window mengandung semua hari event (misal Kamis–Senin)
+          const allMatch = eventDays.every((d) => windowDays.includes(d));
           if (!allMatch) continue;
 
-          // Hitung rata-rata window ini
           const avg = window.reduce((s, d) => s + d.value, 0) / window.length;
-
           if (avg < lowestAvg) {
             lowestAvg = avg;
             bestStartIndex = i;
           }
         }
 
-        // Ambil periode dengan rata-rata paling kecil
         if (bestStartIndex !== null) {
           const bestWindow = pastData.slice(
             bestStartIndex,
-            bestStartIndex + eventDuration
+            bestStartIndex + eventDuration * sitesPerDay
           );
 
+          const lowestDates = [
+            ...new Set(bestWindow.map((d) => d.date.toDateString())),
+          ];
+
+          // Ambil semua label dari tanggal tersebut (semua site)
+          const expandedLabels = parsed
+            .filter((x) => lowestDates.includes(x.date.toDateString()))
+            .map((x) => x.label);
+
           lowestSameDayZone = {
-            x1: bestWindow[0].label,
-            x2: bestWindow[bestWindow.length - 1].label,
+            x1: expandedLabels[0],
+            x2: expandedLabels[expandedLabels.length - 1],
             type: "lowestSameDay",
+            labels: expandedLabels,
           };
 
           console.log(
-            "🟦 Lowest Same-Day Zone FOUND:",
-            lowestSameDayZone,
-            "Rata-rata:",
-            lowestAvg.toFixed(2)
+            "🟦 Lowest Same-Day Zone (multi-site FIXED):",
+            expandedLabels.length,
+            "bar, tanggal:",
+            lowestDates.join(", ")
           );
-        } else {
-          console.warn("⚠️ Tidak ada window cocok dengan hari event.");
         }
       }
     }
@@ -588,8 +629,48 @@ const EventDetail = () => {
     const zones = [];
     if (eventZone) zones.push(eventZone);
     if (lowestSameDayZone) zones.push(lowestSameDayZone);
+    if (bestStartIndex !== null && eventDuration > 0) {
+      const bestWindow = parsed
+        .filter((d) => d.date < start)
+        .slice(bestStartIndex, bestStartIndex + eventDuration);
+
+      const lowestDates = [
+        ...new Set(bestWindow.map((d) => d.date.toDateString())),
+      ];
+
+      const expandedLabels = parsed
+        .filter((x) => lowestDates.includes(x.date.toDateString()))
+        .map((x) => x.label);
+
+      lowestSameDayZone = {
+        ...lowestSameDayZone,
+        labels: expandedLabels,
+      };
+
+      console.log(
+        "🟦 Lowest Same-Day Zone (multi-site FIXED):",
+        expandedLabels.length,
+        "bar, tanggal:",
+        lowestDates.join(", ")
+      );
+    }
 
     setHighlightZones(zones);
+    // 🧾 Debug visual untuk memastikan blok highlight benar
+    const debugTable = parsed.map((d) => {
+      const isEvent = d.date >= start && d.date <= end ? "✅" : "";
+      const isLowest = lowestSameDayZone?.labels?.includes(d.label) ? "🟦" : "";
+      return {
+        Tanggal: d.label,
+        Site: d.site || "-",
+        "Event Zone": isEvent,
+        "Lowest Zone": isLowest,
+        Value: d.value,
+      };
+    });
+
+    console.log("📋 DEBUG Highlight Table (cek site & hari terblok):");
+    console.table(debugTable);
   }, [event, excelData, headers]);
 
   useEffect(() => {
@@ -681,6 +762,29 @@ const EventDetail = () => {
       growth: `${summary.growthUser.toFixed(2)}%`,
     },
   ];
+
+  {
+    /* 🔄 State untuk ubah unit payload */
+  }
+  const [payloadUnit, setPayloadUnit] = useState("MB");
+
+  {
+    /* Fungsi konversi payload */
+  }
+  const convertPayload = (value, unit) => {
+    switch (unit) {
+      case "KB":
+        return value * 1024;
+      case "MB":
+        return value;
+      case "GB":
+        return value / 1024;
+      case "TB":
+        return value / (1024 * 1024);
+      default:
+        return value;
+    }
+  };
 
   if (loading)
     return (
@@ -837,7 +941,37 @@ const EventDetail = () => {
           <div className="bg-gray-300 text-gray-800 font-bold px-4 py-1 rounded-md w-fit mb-4">
             SUMMARY PRODUCTIVITY
           </div>
+
+          {/* Bagian UI */}
           <ul className="space-y-2 text-gray-800 font-semibold">
+            {/* 🔹 PAYLOAD DULU */}
+            <li className="flex items-center justify-between">
+              <div>
+                Incremental Payload During Event :
+                <span className="text-green-600">
+                  {" "}
+                  {convertPayload(summary.payload, payloadUnit).toLocaleString(
+                    "id-ID",
+                    { maximumFractionDigits: 2 }
+                  )}{" "}
+                  {payloadUnit} ({summary.growthPayload.toFixed(2)}%)
+                </span>
+              </div>
+
+              {/* Dropdown Unit */}
+              <select
+                value={payloadUnit}
+                onChange={(e) => setPayloadUnit(e.target.value)}
+                className="ml-3 border border-gray-300 rounded-md px-2 py-1 text-sm bg-white hover:border-gray-400 focus:outline-none"
+              >
+                <option value="KB">KB</option>
+                <option value="MB">MB</option>
+                <option value="GB">GB</option>
+                <option value="TB">TB</option>
+              </select>
+            </li>
+
+            {/* 🔹 REVENUE */}
             <li>
               Incremental Revenue During Event :
               <span className="text-green-600">
@@ -846,19 +980,11 @@ const EventDetail = () => {
                 {summary.revenue.toLocaleString("id-ID", {
                   maximumFractionDigits: 2,
                 })}{" "}
-                a({summary.growthRevenue.toFixed(2)}%)
+                ({summary.growthRevenue.toFixed(2)}%)
               </span>
             </li>
-            <li>
-              Incremental Payload During Event :
-              <span className="text-green-600">
-                {" "}
-                {summary.payload.toLocaleString("id-ID", {
-                  maximumFractionDigits: 2,
-                })}{" "}
-                a({summary.growthPayload.toFixed(2)}%)
-              </span>
-            </li>
+
+            {/* 🔹 USER */}
             <li>
               Incremental Max User During Event :
               <span className="text-green-600">
@@ -866,7 +992,7 @@ const EventDetail = () => {
                 {summary.maxUser.toLocaleString("id-ID", {
                   maximumFractionDigits: 2,
                 })}{" "}
-                a({summary.growthUser.toFixed(2)}%)
+                User ({summary.growthUser.toFixed(2)}%)
               </span>
             </li>
           </ul>

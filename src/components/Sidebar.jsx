@@ -31,13 +31,23 @@ const Sidebar = () => {
       } bg-slate-900 text-gray-100 h-screen p-4 flex flex-col transition-all duration-300`}
     >
       {/* Header */}
-      <div className="flex items-center-between mb-6">
-        <h1 className={`text-xl font-bold ${!isOpen && "hidden"}`}>NetSight</h1>
+      <div className="flex items-center justify-between mb-8">
+        {/* Logo */}
+        <h1
+          className={`text-2xl font-extrabold tracking-tight ${
+            !isOpen && "hidden"
+          } text-white`}
+        >
+          Net<span className="text-blue-400">Sight</span>
+        </h1>
+
+        {/* Toggle Button */}
         <button
           onClick={() => setIsOpen(!isOpen)}
-          className="bg-slate-800 p-2 rounded-md hover:bg-slate-700"
+          className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 transition-all duration-200"
+          title={isOpen ? "Tutup Sidebar" : "Buka Sidebar"}
         >
-          ☰
+          <span className="text-lg text-gray-200">☰</span>
         </button>
       </div>
 
