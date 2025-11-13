@@ -17,6 +17,23 @@ import {
 } from "recharts";
 
 const EventDetail = () => {
+  const [isDarkMode, setIsDarkMode] = useState(
+    () =>
+      typeof window !== "undefined" &&
+      document.documentElement.classList.contains("dark")
+  );
+
+  useEffect(() => {
+    const observer = new MutationObserver(() => {
+      setIsDarkMode(document.documentElement.classList.contains("dark"));
+    });
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["class"],
+    });
+    return () => observer.disconnect();
+  }, []);
+
   const { id } = useParams();
   const [event, setEvent] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -794,140 +811,163 @@ const EventDetail = () => {
     );
 
   return (
-    <div className="p-8 bg-gray-50 min-h-screen">
-      <Link to="/calender" className="text-blue-600 hover:underline mb-6 block">
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-gray-100 dark:from-slate-900 dark:via-slate-900 dark:to-slate-900 text-gray-800 dark:text-gray-100 px-6 md:px-12 py-10 transition-all duration-300">
+      {/* 🔙 Back Button */}
+      <Link
+        to="/calender"
+        className="inline-flex items-center text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 mb-8 text-sm font-medium transition-all"
+      >
         ← Kembali ke Kalender
       </Link>
 
-      <div className="text-center mb-10">
-        <h1 className="text-2xl font-semibold text-gray-700">
-          POST IMPLEMENTATION ANALYSIS
+      {/* 🧩 Header */}
+      <div className="text-center mb-14">
+        <h1 className="text-3xl md:text-4xl font-extrabold text-gray-800 dark:text-gray-100 tracking-tight">
+          📊 Post Implementation Analysis
         </h1>
-        <h2 className="text-4xl font-bold mt-2">
-          LOCAL EVENT |{" "}
-          <span className="text-red-600">{event?.name || "Event"}</span>
+        <h2 className="text-4xl md:text-5xl font-bold mt-3 text-gray-900 dark:text-white">
+          {event?.type?.toUpperCase() ||
+            event?.category?.toUpperCase() ||
+            "LOCAL EVENT"}
+          :{" "}
+          <span className="text-blue-600 dark:text-blue-400 ml-2">
+            {event?.name || "Event"}
+          </span>
         </h2>
       </div>
 
-      {/* Background + Summary */}
-      <div className="grid md:grid-cols-2 gap-6 mb-10">
-        {/* BACKGROUND */}
-        <div className="bg-white p-6 rounded-xl shadow-md border border-gray-200 relative">
-          <div className="bg-gray-300 text-gray-800 font-bold px-4 py-1 rounded-md w-fit mb-4">
+      {/* 🧱 Background + Summary */}
+      <div className="grid md:grid-cols-2 gap-8 mb-14">
+        {/* LEFT - Background */}
+        <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-lg border border-gray-200 dark:border-slate-700 p-6 relative hover:shadow-xl transition-all duration-300">
+          <div className="bg-blue-600 text-white text-sm font-semibold px-4 py-1 rounded-md w-fit mb-5 shadow-sm">
             BACKGROUND
           </div>
 
           {!editing && (
             <button
               onClick={() => setEditing(true)}
-              className="absolute top-4 right-4 bg-blue-600 text-white px-3 py-1 rounded-lg text-sm"
+              className="absolute top-5 right-5 bg-blue-500 hover:bg-blue-600 text-white px-3 py-1.5 rounded-md text-sm shadow transition-all"
             >
-              Edit
+              ✏ Edit
             </button>
           )}
 
           {!editing ? (
-            <div className="space-y-2 text-gray-800">
-              <p className="font-semibold">
-                Local Event{" "}
-                <span className="text-red-600">{event?.name || "-"}</span>
-              </p>
-              <p>
-                <span className="font-semibold">Date: </span>
-                {event?.start_date && event?.end_date
-                  ? `${new Date(event.start_date).toLocaleDateString("id-ID", {
-                      day: "2-digit",
-                      month: "long",
-                    })} - ${new Date(event.end_date).toLocaleDateString(
-                      "id-ID",
-                      { day: "2-digit", month: "long", year: "numeric" }
-                    )}`
-                  : "-"}
+            <div className="space-y-4 text-gray-800 leading-relaxed">
+              {/* 📍 Lokasi */}
+              <p className="text-lg font-semibold text-gray-700 dark:text-gray-200">
+                📍 Lokasi:{" "}
+                <span className="font-normal text-gray-600 dark:text-gray-300">
+                  {event?.location || "-"}
+                </span>
               </p>
 
-              <p className="font-semibold">Main Venue:</p>
-              <ul className="list-disc ml-5">
-                <li>{event?.location || "-"}</li>
-              </ul>
-
-              <p className="font-semibold mt-2">Site Serving:</p>
-              <ul className="list-disc ml-5">
-                {siteServing
-                  ? siteServing
-                      .split(",")
-                      .map((s, i) => <li key={`site-${i}`}>{s.trim()}</li>)
-                  : "Belum diisi"}
-              </ul>
-
-              <p className="font-semibold mt-2">Action:</p>
-              <ul className="list-disc ml-5">
-                {event?.action
-                  ? event.action
-                      .split(",")
-                      .map((a, i) => <li key={`act-${i}`}>{a.trim()}</li>)
-                  : "Belum diisi"}
-              </ul>
-            </div>
-          ) : (
-            <div>
-              <label className="block font-semibold mb-1">Action</label>
-              <div className="space-y-2">
-                {actions.map((act, idx) => (
-                  <div key={idx} className="flex items-center gap-2">
-                    <input
-                      type="text"
-                      value={act}
-                      onChange={(e) => {
-                        const updated = [...actions];
-                        updated[idx] = e.target.value;
-                        setActions(updated);
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") {
-                          e.preventDefault();
-                          const updated = [...actions];
-                          updated.splice(idx + 1, 0, "");
-                          setActions(updated);
+              {/* 📅 Tanggal Event */}
+              <p className="text-lg font-semibold text-gray-700 dark:text-gray-200">
+                📅 Date:{" "}
+                <span className="font-normal text-gray-600 dark:text-gray-300">
+                  {event?.start_date && event?.end_date
+                    ? `${new Date(event.start_date).toLocaleDateString(
+                        "id-ID",
+                        {
+                          day: "2-digit",
+                          month: "long",
                         }
-                      }}
-                      className="w-full border rounded-md p-2"
-                      placeholder={`Action ${idx + 1}`}
-                    />
+                      )} – ${new Date(event.end_date).toLocaleDateString(
+                        "id-ID",
+                        {
+                          day: "2-digit",
+                          month: "long",
+                          year: "numeric",
+                        }
+                      )}`
+                    : "Tanggal belum ditentukan"}
+                </span>
+              </p>
 
-                    {/* Tombol hapus action */}
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setActions(actions.filter((_, i) => i !== idx))
-                      }
-                      className="bg-red-500 hover:bg-red-600 text-white px-2 py-1 rounded-md text-sm"
-                      title="Hapus Action"
-                    >
-                      🗑️
-                    </button>
-                  </div>
-                ))}
-
-                <button
-                  type="button"
-                  onClick={() => setActions([...actions, ""])}
-                  className="text-blue-600 text-sm font-medium hover:underline"
-                >
-                  + Tambah Action
-                </button>
+              {/* 🛰 Site Serving */}
+              <div>
+                <span className="font-semibold text-gray-700 dark:text-gray-200">
+                  🛰 Site Serving:
+                </span>
+                <ul className="list-disc ml-6 text-sm text-gray-600 dark:text-gray-300 mt-1">
+                  {siteServing
+                    ? siteServing
+                        .split(",")
+                        .map((s, i) => <li key={i}>{s.trim()}</li>)
+                    : "Belum diisi"}
+                </ul>
               </div>
 
-              <div className="flex gap-3 mt-3">
+              {/* ⚙️ Action Plan */}
+              <div>
+                <span className="font-semibold text-gray-700 dark:text-gray-200">
+                  ⚙️ Action Plan:
+                </span>
+                <ul className="list-disc ml-6 text-sm text-gray-600 dark:text-gray-300 mt-1">
+                  {event?.action
+                    ? event.action
+                        .split(",")
+                        .map((a, i) => <li key={i}>{a.trim()}</li>)
+                    : "Belum diisi"}
+                </ul>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <label className="font-semibold text-gray-700 dark:text-gray-200 block">
+                Edit Action Plan
+              </label>
+              {actions.map((act, idx) => (
+                <div key={idx} className="flex gap-2 items-center">
+                  <input
+                    type="text"
+                    value={act}
+                    onChange={(e) => {
+                      const updated = [...actions];
+                      updated[idx] = e.target.value;
+                      setActions(updated);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        const updated = [...actions];
+                        updated.splice(idx + 1, 0, "");
+                        setActions(updated);
+                      }
+                    }}
+                    className="w-full border border-gray-300 dark:border-slate-700 dark:bg-slate-700 dark:text-gray-100 rounded-lg p-2 text-sm focus:ring-2 focus:ring-blue-400 focus:outline-none"
+                    placeholder={`Action ${idx + 1}`}
+                  />
+                  <button
+                    onClick={() =>
+                      setActions(actions.filter((_, i) => i !== idx))
+                    }
+                    className="bg-red-500 hover:bg-red-600 text-white px-2 py-1 rounded-md text-xs"
+                  >
+                    🗑
+                  </button>
+                </div>
+              ))}
+              <button
+                onClick={() => setActions([...actions, ""])}
+                className="text-blue-600 hover:underline text-sm"
+              >
+                + Tambah Action
+              </button>
+
+              <div className="flex gap-3 mt-4">
                 <button
                   onClick={handleSave}
                   disabled={saving}
-                  className="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 disabled:opacity-50"
+                  className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition disabled:opacity-50"
                 >
-                  {saving ? "Menyimpan..." : "Simpan"}
+                  {saving ? "Menyimpan..." : "💾 Simpan"}
                 </button>
                 <button
                   onClick={() => setEditing(false)}
-                  className="bg-gray-400 text-white px-4 py-2 rounded-md hover:bg-gray-500"
+                  className="bg-gray-400 dark:bg-slate-600 hover:bg-gray-500 dark:hover:bg-slate-500 text-white px-4 py-2 rounded-lg transition"
                 >
                   Batal
                 </button>
@@ -936,33 +976,38 @@ const EventDetail = () => {
           )}
         </div>
 
-        {/* SUMMARY PRODUCTIVITY */}
-        <div className="bg-white p-6 rounded-xl shadow-md border border-gray-200">
-          <div className="bg-gray-300 text-gray-800 font-bold px-4 py-1 rounded-md w-fit mb-4">
+        {/* RIGHT - Summary */}
+        <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-lg border border-gray-200 dark:border-slate-700 p-6 hover:shadow-xl transition-all duration-300">
+          <div className="bg-blue-600 text-white text-sm font-semibold px-4 py-1 rounded-md w-fit mb-5 shadow-sm">
             SUMMARY PRODUCTIVITY
           </div>
 
-          {/* Bagian UI */}
-          <ul className="space-y-2 text-gray-800 font-semibold">
-            {/* 🔹 PAYLOAD DULU */}
+          <ul className="space-y-4 font-semibold text-gray-700 dark:text-gray-200">
+            {/* PAYLOAD */}
             <li className="flex items-center justify-between">
               <div>
-                Incremental Payload During Event :
-                <span className="text-green-600">
-                  {" "}
+                Incremental Payload :
+                <span className="text-blue-600 dark:text-blue-400 ml-2">
                   {convertPayload(summary.payload, payloadUnit).toLocaleString(
                     "id-ID",
                     { maximumFractionDigits: 2 }
                   )}{" "}
-                  {payloadUnit} ({summary.growthPayload.toFixed(2)}%)
+                  {payloadUnit}
+                </span>{" "}
+                <span
+                  className={`font-bold ${
+                    summary.growthPayload >= 0
+                      ? "text-green-600"
+                      : "text-red-600"
+                  }`}
+                >
+                  ({summary.growthPayload.toFixed(2)}%)
                 </span>
               </div>
-
-              {/* Dropdown Unit */}
               <select
                 value={payloadUnit}
                 onChange={(e) => setPayloadUnit(e.target.value)}
-                className="ml-3 border border-gray-300 rounded-md px-2 py-1 text-sm bg-white hover:border-gray-400 focus:outline-none"
+                className="ml-3 border border-gray-300 dark:border-slate-700 dark:bg-slate-800 dark:text-gray-100 rounded-md px-2 py-1 text-sm hover:border-blue-400 focus:ring-2 focus:ring-blue-300"
               >
                 <option value="KB">KB</option>
                 <option value="MB">MB</option>
@@ -971,51 +1016,64 @@ const EventDetail = () => {
               </select>
             </li>
 
-            {/* 🔹 REVENUE */}
+            {/* REVENUE */}
             <li>
-              Incremental Revenue During Event :
-              <span className="text-green-600">
-                {" "}
+              Incremental Revenue :
+              <span className="text-blue-600 dark:text-blue-400 ml-2">
                 Rp{" "}
                 {summary.revenue.toLocaleString("id-ID", {
                   maximumFractionDigits: 2,
-                })}{" "}
+                })}
+              </span>{" "}
+              <span
+                className={`font-bold ${
+                  summary.growthRevenue >= 0 ? "text-green-600" : "text-red-600"
+                }`}
+              >
                 ({summary.growthRevenue.toFixed(2)}%)
               </span>
             </li>
 
-            {/* 🔹 USER */}
+            {/* USER */}
             <li>
-              Incremental Max User During Event :
-              <span className="text-green-600">
-                {" "}
+              Incremental Max User :
+              <span className="text-blue-600 dark:text-blue-400 ml-2">
                 {summary.maxUser.toLocaleString("id-ID", {
                   maximumFractionDigits: 2,
                 })}{" "}
-                User ({summary.growthUser.toFixed(2)}%)
+                User
+              </span>{" "}
+              <span
+                className={`font-bold ${
+                  summary.growthUser >= 0 ? "text-green-600" : "text-red-600"
+                }`}
+              >
+                ({summary.growthUser.toFixed(2)}%)
               </span>
             </li>
           </ul>
         </div>
       </div>
 
-      {/* Upload Excel & Chart Section */}
-      <div className="bg-white p-6 rounded-xl shadow-md border border-gray-200">
-        <div className="flex justify-between items-center mb-6">
-          <h2 className="text-lg font-bold">Upload Excel & Chart</h2>
-          <div className="flex gap-2">
+      {/* 📈 Upload & Chart Section */}
+      <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-lg border border-gray-200 dark:border-slate-700 p-6 hover:shadow-xl transition-all duration-300">
+        <div className="flex justify-between items-center mb-8 flex-wrap gap-4">
+          <h2 className="text-xl font-bold text-gray-700 dark:text-gray-100 flex items-center gap-2">
+            📂 Upload Excel & Chart
+          </h2>
+          <div className="flex gap-3 items-center">
             <input
               type="file"
               accept=".xlsx,.xls,.csv"
               onChange={handleExcelUpload}
-              className="border rounded-md p-2 text-sm"
+              className="border border-gray-300 dark:border-slate-700 dark:bg-slate-700 dark:text-gray-100 rounded-lg px-3 py-2 text-sm shadow-sm hover:border-blue-400 focus:ring-2 focus:ring-blue-300 focus:outline-none"
             />
             {excelUrl && (
               <button
                 onClick={handleExcelDelete}
-                className="bg-red-600 text-white px-3 py-1 rounded-md hover:bg-red-700 text-sm"
+                className="bg-red-500 dark:bg-red-600 hover:bg-red-600 dark:hover:bg-red-500 text-white px-4 py-2 rounded-lg text-sm shadow"
               >
-                Hapus
+                🗑 Hapus File
               </button>
             )}
           </div>
@@ -1024,131 +1082,136 @@ const EventDetail = () => {
         {excelData.length > 0 ? (
           <div className="grid md:grid-cols-3 gap-8">
             {chartSections.map((chart) => {
-              // Tentukan key Excel yang sesuai
-              const metricKey =
-                chart.key === "rev"
-                  ? headers.find((h) => /^rev$/i.test(h.trim()))
-                  : chart.key === "payload"
-                  ? headers.find((h) => h.toLowerCase().includes("payload"))
-                  : headers.find(
-                      (h) =>
-                        h.toLowerCase().includes("user") ||
-                        h.toLowerCase().includes("usr")
-                    );
-
-              if (!metricKey) return null;
-
-              // 🔹 Generate data spesifik untuk tiap chart
-              const chartData = parsedData[chart.key] || [];
-
               const colorMap = {
-                payload: "#2563eb", // biru
-                rev: "#16a34a", // hijau
-                user: "#9333ea", // ungu
+                payload: "#2563EB",
+                rev: "#16A34A",
+                user: "#9333EA",
               };
+              const growthColor =
+                parseFloat(chart.growth) >= 0 ? "bg-green-500" : "bg-red-500";
 
               return (
-                <div key={chart.key}>
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="bg-blue-700 text-white px-4 py-1 rounded-md font-bold">
+                <div
+                  key={chart.key}
+                  className="bg-gray-50 dark:bg-slate-700 rounded-xl p-4 shadow-inner border border-gray-200 dark:border-slate-600 hover:shadow-md transition-all duration-200"
+                >
+                  <div className="flex justify-between items-center mb-3">
+                    <h3 className="font-bold text-blue-700 dark:text-blue-400">
                       {chart.title}
-                    </div>
-                    <div
-                      className={`${
-                        parseFloat(chart.growth) >= 0
-                          ? "bg-green-500"
-                          : "bg-red-500"
-                      } text-white px-3 py-1 rounded-lg text-sm font-semibold shadow`}
+                    </h3>
+
+                    <span
+                      className={`${growthColor} text-white px-3 py-1 rounded-md text-sm font-semibold shadow`}
                     >
                       {chart.growth}
-                    </div>
+                    </span>
                   </div>
 
-                  <div className="flex justify-between items-center mb-2 text-sm">
-                    <button
-                      className="border px-2 py-1 rounded bg-gray-100 hover:bg-gray-200"
-                      onClick={() =>
-                        setChartType({
-                          ...chartType,
-                          [chart.key]:
-                            chartType[chart.key] === "bar" ? "line" : "bar",
-                        })
-                      }
-                    >
-                      {chartType[chart.key] === "bar" ? "Bar 📊" : "Line 📈"}
-                    </button>
-                  </div>
+                  <button
+                    className="border border-gray-300 dark:border-slate-900 dark:bg-slate-700 dark:text-gray-100 px-3 py-1 text-sm rounded-md mb-3 bg-white hover:bg-blue-50 dark:hover:bg-slate-600 transition-all"
+                    onClick={() =>
+                      setChartType({
+                        ...chartType,
+                        [chart.key]:
+                          chartType[chart.key] === "bar" ? "line" : "bar",
+                      })
+                    }
+                  >
+                    {chartType[chart.key] === "bar" ? "📊 Bar" : "📈 Line"}
+                  </button>
 
-                  <div className="bg-gray-50 rounded-lg shadow p-3 border border-gray-200">
+                  <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-gray-200 dark:border-slate-700 p-2">
                     <ResponsiveContainer width="100%" height={280}>
                       {chartType[chart.key] === "bar" ? (
-                        <BarChart data={chartData}>
+                        <BarChart data={parsedData[chart.key]}>
                           <CartesianGrid strokeDasharray="3 3" />
                           <XAxis dataKey="label" tick={{ fontSize: 10 }} />
                           <YAxis domain={[0, "auto"]} tick={{ fontSize: 10 }} />
                           <Tooltip />
                           <Legend />
-                          {highlightZones
-                            .filter((z) => z && z.x1 && z.x2)
-                            .map((z, i) => (
+                          {highlightZones.map((z, i) => {
+                            const fillColor = isDarkMode
+                              ? z.type === "lowestSameDay"
+                                ? "#1E40AF"
+                                : "#064E3B"
+                              : z.type === "lowestSameDay"
+                              ? "#BFDBFE"
+                              : "#A7F3D0";
+
+                            const strokeColor = isDarkMode
+                              ? z.type === "lowestSameDay"
+                                ? "#60A5FA"
+                                : "#34D399"
+                              : z.type === "lowestSameDay"
+                              ? "#3B82F6"
+                              : "#059669";
+
+                            return (
                               <ReferenceArea
-                                key={`${chart.key}-zone-${i}`}
+                                key={i}
                                 x1={z.x1}
                                 x2={z.x2}
-                                fill={
-                                  z.type === "lowestSameDay"
-                                    ? "#bfdbfe" // biru muda
-                                    : "#a7f3d0" // hijau muda
-                                }
-                                stroke={
-                                  z.type === "lowestSameDay"
-                                    ? "#3b82f6" // biru
-                                    : "#059669" // hijau
-                                }
-                                strokeOpacity={0.7}
-                                fillOpacity={0.4}
+                                fill={fillColor}
+                                stroke={strokeColor}
+                                fillOpacity={isDarkMode ? 0.25 : 0.4}
+                                strokeOpacity={isDarkMode ? 0.8 : 0.6}
                               />
-                            ))}
+                            );
+                          })}
+
                           <Bar
                             dataKey="value"
                             fill={colorMap[chart.key]}
-                            radius={[4, 4, 0, 0]}
+                            radius={[5, 5, 0, 0]}
                           />
                         </BarChart>
                       ) : (
-                        <LineChart data={chartData}>
+                        <LineChart data={parsedData[chart.key]}>
                           <CartesianGrid strokeDasharray="3 3" />
                           <XAxis dataKey="label" tick={{ fontSize: 10 }} />
                           <YAxis domain={[0, "auto"]} tick={{ fontSize: 10 }} />
                           <Tooltip />
                           <Legend />
+                          {/* 💡 FIXED ReferenceArea agar tetap muncul di LineChart */}
                           {highlightZones
-                            .filter((z) => z && z.x1 && z.x2)
-                            .map((z, i) => (
-                              <ReferenceArea
-                                key={`${chart.key}-zone-${i}`}
-                                x1={z.x1}
-                                x2={z.x2}
-                                fill={
-                                  z.type === "lowestSameDay"
-                                    ? "#bfdbfe" // biru muda
-                                    : "#a7f3d0" // hijau muda
-                                }
-                                stroke={
-                                  z.type === "lowestSameDay"
-                                    ? "#3b82f6" // biru
-                                    : "#059669" // hijau
-                                }
-                                strokeOpacity={0.7}
-                                fillOpacity={0.4}
-                              />
-                            ))}
+                            .filter((z) => z.x1 && z.x2)
+                            .map((z, i) => {
+                              // Cek apakah x1 dan x2 ada di label data
+                              const labels = parsedData[chart.key].map(
+                                (d) => d.label
+                              );
+                              if (
+                                !labels.includes(z.x1) ||
+                                !labels.includes(z.x2)
+                              )
+                                return null;
+                              return (
+                                <ReferenceArea
+                                  key={`${chart.key}-zone-${i}`}
+                                  x1={z.x1}
+                                  x2={z.x2}
+                                  fill={
+                                    z.type === "lowestSameDay"
+                                      ? "#BFDBFE"
+                                      : "#A7F3D0"
+                                  }
+                                  stroke={
+                                    z.type === "lowestSameDay"
+                                      ? "#3B82F6"
+                                      : "#059669"
+                                  }
+                                  fillOpacity={0.35}
+                                  strokeOpacity={0.8}
+                                />
+                              );
+                            })}
                           <Line
                             type="monotone"
                             dataKey="value"
                             stroke={colorMap[chart.key]}
-                            strokeWidth={2}
+                            strokeWidth={2.2}
                             dot={false}
+                            activeDot={{ r: 4 }}
                           />
                         </LineChart>
                       )}
@@ -1159,8 +1222,8 @@ const EventDetail = () => {
             })}
           </div>
         ) : (
-          <p className="text-gray-500 text-center mt-4">
-            Belum ada file Excel diunggah 📄
+          <p className="text-gray-500 dark:text-gray-400 italic text-center py-8">
+            📭 Belum ada file Excel diunggah
           </p>
         )}
       </div>

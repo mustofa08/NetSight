@@ -1,25 +1,19 @@
 import { useState } from "react";
 import {
-  BarChart3,
-  Database,
-  LineChart,
-  Settings,
   Home,
-  FilePlus,
   Calendar,
+  Settings,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 
 const Sidebar = () => {
   const [isOpen, setIsOpen] = useState(true);
-  const location = useLocation(); // 👉 untuk mendeteksi halaman aktif
+  const location = useLocation();
 
   const menuItems = [
     { name: "Dashboard", icon: <Home size={20} />, path: "/home" },
-    // { name: "Event Data", icon: <Database size={20} />, path: "/event-data" },
-    // { name: "Input Data", icon: <FilePlus size={20} />, path: "/input-data" },
-    // { name: "Comparison", icon: <BarChart3 size={20} />, path: "/comparison" },
-    // { name: "Analytics", icon: <LineChart size={20} />, path: "/analytics" },
     { name: "Calender", icon: <Calendar size={20} />, path: "/calender" },
     { name: "Settings", icon: <Settings size={20} />, path: "/settings" },
   ];
@@ -28,52 +22,86 @@ const Sidebar = () => {
     <div
       className={`${
         isOpen ? "w-64" : "w-20"
-      } bg-slate-900 text-gray-100 h-screen p-4 flex flex-col transition-all duration-300`}
+      } bg-gradient-to-b from-slate-900 to-blue-800 dark:from-slate-950 dark:to-slate-800 text-gray-100 h-screen p-4 flex flex-col transition-all duration-300 border-r border-slate-700/50 shadow-xl`}
     >
       {/* Header */}
-      <div className="flex items-center justify-between mb-8">
-        {/* Logo */}
-        <h1
-          className={`text-2xl font-extrabold tracking-tight ${
+      <div className="flex items-center justify-between mb-10">
+        <div
+          className={`flex items-center gap-2 transition-all ${
             !isOpen && "hidden"
-          } text-white`}
+          }`}
         >
-          Net<span className="text-blue-400">Sight</span>
-        </h1>
+          <h1 className="text-xl font-extrabold text-white tracking-tight">
+            Net<span className="text-blue-400">Sight</span>
+          </h1>
+        </div>
 
-        {/* Toggle Button */}
+        {/* Toggle */}
         <button
           onClick={() => setIsOpen(!isOpen)}
-          className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 transition-all duration-200"
+          className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 transition-all duration-300 text-gray-200"
           title={isOpen ? "Tutup Sidebar" : "Buka Sidebar"}
         >
-          <span className="text-lg text-gray-200">☰</span>
+          {isOpen ? <ChevronLeft size={18} /> : <ChevronRight size={18} />}
         </button>
       </div>
 
-      {/* Menu */}
-      <nav className="flex-1">
+      {/* Navigation Menu */}
+      <nav className="flex-1 space-y-2">
         {menuItems.map((item) => {
           const isActive = location.pathname === item.path;
           return (
             <Link
               to={item.path}
               key={item.name}
-              className={`flex items-center gap-3 p-3 rounded-md cursor-pointer transition-all
+              className={`group relative flex items-center gap-3 p-3 rounded-md transition-all duration-200
                 ${
                   isActive
-                    ? "bg-blue-600 text-white shadow-md" // highlight aktif
-                    : "hover:bg-slate-800 text-gray-300"
+                    ? "bg-blue-600 text-white shadow-lg dark:bg-blue-500"
+                    : "hover:bg-slate-800 dark:hover:bg-slate-700 text-gray-300"
                 }`}
             >
-              {item.icon}
-              <span className={`${!isOpen && "hidden"} text-sm`}>
+              <div
+                className={`transition-transform duration-200 ${
+                  isActive
+                    ? "scale-110 text-white"
+                    : "group-hover:text-blue-400"
+                }`}
+              >
+                {item.icon}
+              </div>
+              <span
+                className={`${
+                  !isOpen && "hidden"
+                } text-sm font-medium tracking-wide`}
+              >
                 {item.name}
               </span>
+
+              {/* Tooltip saat collapsed */}
+              {!isOpen && (
+                <span
+                  className="absolute left-16 bg-slate-800 text-gray-100 text-xs rounded-md px-2 py-1 opacity-0 group-hover:opacity-100 transition-all duration-200 whitespace-nowrap border border-slate-700"
+                  style={{ top: "50%", transform: "translateY(-50%)" }}
+                >
+                  {item.name}
+                </span>
+              )}
             </Link>
           );
         })}
       </nav>
+
+      {/* Footer / Mini Info */}
+      <div
+        className={`mt-auto pt-6 border-t border-slate-700/50 ${
+          !isOpen && "hidden"
+        }`}
+      >
+        <p className="text-xs text-slate-400 text-center">
+          © 2025 NetSight. All rights reserved.
+        </p>
+      </div>
     </div>
   );
 };

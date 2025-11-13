@@ -1,15 +1,10 @@
 import React, { useEffect, useState } from "react";
 import { Routes, Route } from "react-router-dom";
 import { supabase } from "./client";
-
 import { Login, Signup } from "./pages";
 import Layout from "./layout/Layout";
 import Dashboard from "./pages/Dashboard";
-import EventData from "./pages/EventData";
-import Comparison from "./pages/Comparison";
-import Analytics from "./pages/Analytics";
 import Settings from "./pages/Settings";
-import InputData from "./pages/InputData";
 import Calender from "./pages/Calender";
 import EventDetail from "./pages/EventDetail";
 
@@ -77,10 +72,6 @@ const App = () => {
       {token && (
         <Route element={<Layout setToken={setToken} user={user} />}>
           <Route path="/home" element={<Dashboard user={user} />} />
-          <Route path="/event-data" element={<EventData user={user} />} />
-          <Route path="/input-data" element={<InputData user={user} />} />
-          <Route path="/comparison" element={<Comparison user={user} />} />
-          <Route path="/analytics" element={<Analytics user={user} />} />
           <Route path="/settings" element={<Settings user={user} />} />
           <Route path="/calender" element={<Calender user={user} />} />
           <Route path="/event/:id" element={<EventDetail />} />
