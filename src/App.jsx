@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Routes, Route } from "react-router-dom";
+import { Routes, Route, Navigate } from "react-router-dom";
 import { supabase } from "./client";
 import { Login, Signup } from "./pages";
 import Layout from "./layout/Layout";
@@ -66,7 +66,18 @@ const App = () => {
 
   return (
     <Routes>
-      <Route path="/" element={<Login setToken={setToken} />} />
+      {/* Jika sudah login → redirect ke /home */}
+      <Route
+        path="/"
+        element={
+          token ? (
+            <Navigate to="/home" replace />
+          ) : (
+            <Login setToken={setToken} />
+          )
+        }
+      />
+
       <Route path="/signup" element={<Signup />} />
 
       {token && (
